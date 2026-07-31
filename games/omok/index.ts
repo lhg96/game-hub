@@ -280,7 +280,7 @@ let game: GameModule = {
     }
 
     function aiMove() {
-      const move = findBestMove(board, 3);
+      const move = findBestMove(board, 2, 3);
       if (!move) { thinking = false; return; }
       const [r, c] = move;
       soundThink();

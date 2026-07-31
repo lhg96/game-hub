@@ -1,8 +1,8 @@
 /**
- * 오목 AI 엔진 — Minimax + Alpha-Beta + 패턴 평가
- * 15×15 보드, 흑돌(선공) / 백돌(후공)
+ * 오목 AI 엔진 v2 — Player 관점 보정 + 강화된 평가
+ * 누구나 AI/인간 흑백 선택 가능 (aiPlayer 파라미터)
  */
-export type Player = 1 | 2; // 1=black, 2=white
+export type Player = 1 | 2;
 export type Cell = 0 | Player;
 export type Board = Cell[][];
 
@@ -12,150 +12,130 @@ export function createBoard(): Board {
   return Array.from({ length: SIZE }, () => Array(SIZE).fill(0) as Cell[]);
 }
 
-function inBounds(r: number, c: number) {
-  return r >= 0 && r < SIZE && c >= 0 && c < SIZE;
-}
+function ib(r: number, c: number) { return r >= 0 && r < SIZE && c >= 0 && c < SIZE; }
 
-const DIRS = [
-  [0, 1], [1, 0], [1, 1], [1, -1],
-];
+const DIRS = [[0, 1], [1, 0], [1, 1], [1, -1]];
 
-/** 연속된 돌 개수와 양쪽 끝 상태 반환 */
-function analyzeLine(
-  board: Board, r: number, c: number, dr: number, dc: number, player: Player
-): { count: number; openEnds: number } {
-  let count = 1;
-  let openEnds = 0;
-  // forward
+function analyze(board: Board, r: number, c: number, dr: number, dc: number, p: Player) {
+  let cnt = 1, open = 0;
   let nr = r + dr, nc = c + dc;
-  while (inBounds(nr, nc) && board[nr][nc] === player) {
-    count++; nr += dr; nc += dc;
-  }
-  if (inBounds(nr, nc) && board[nr][nc] === 0) openEnds++;
-  // backward
+  while (ib(nr, nc) && board[nr][nc] === p) { cnt++; nr += dr; nc += dc; }
+  if (ib(nr, nc) && board[nr][nc] === 0) open++;
   nr = r - dr; nc = c - dc;
-  while (inBounds(nr, nc) && board[nr][nc] === player) {
-    count++; nr -= dr; nc -= dc;
-  }
-  if (inBounds(nr, nc) && board[nr][nc] === 0) openEnds++;
-  return { count, openEnds };
+  while (ib(nr, nc) && board[nr][nc] === p) { cnt++; nr -= dr; nc -= dc; }
+  if (ib(nr, nc) && board[nr][nc] === 0) open++;
+  return { cnt, open };
 }
 
-/** 패턴 점수표 */
-function patternScore(count: number, openEnds: number): number {
-  if (count >= 5) return 100000;
-  if (openEnds === 0) return 0;
-  if (count === 4 && openEnds === 2) return 10000;
-  if (count === 4) return 5000;
-  if (count === 3 && openEnds === 2) return 500;
-  if (count === 3) return 200;
-  if (count === 2 && openEnds === 2) return 50;
-  if (count === 2) return 10;
-  return 1;
+/** 패턴 스코어 */
+function patScore(cnt: number, open: number): number {
+  if (cnt >= 5) return 100000;
+  if (open === 0) return 0;
+  if (cnt === 4 && open === 2) return 50000;
+  if (cnt === 4) return 5000;
+  if (cnt === 3 && open === 2) return 3000;
+  if (cnt === 3) return 500;
+  if (cnt === 2 && open === 2) return 200;
+  if (cnt === 2) return 50;
+  if (cnt === 1 && open === 2) return 10;
+  return 3;
 }
 
-/** 특정 플레이어의 전체 보드 평가 */
-function evaluateBoard(board: Board, player: Player): number {
+/** 특정 플레이어 전체 평가 */
+function evalBoard(board: Board, p: Player): number {
   let score = 0;
-  for (let r = 0; r < SIZE; r++) {
+  for (let r = 0; r < SIZE; r++)
     for (let c = 0; c < SIZE; c++) {
-      if (board[r][c] !== player) continue;
+      if (board[r][c] !== p) continue;
       for (const [dr, dc] of DIRS) {
-        const { count, openEnds } = analyzeLine(board, r, c, dr, dc, player);
-        score += patternScore(count, openEnds);
+        const { cnt, open } = analyze(board, r, c, dr, dc, p);
+        score += patScore(cnt, open);
       }
     }
-  }
   return score;
 }
 
-/** 보드 평가 (AI=흑, 상대=백 기준) */
-function evaluate(board: Board): number {
-  return evaluateBoard(board, 1) - evaluateBoard(board, 2) * 1.1;
+/** AI 관점 평가 */
+function evaluate(board: Board, ai: Player): number {
+  const opp: Player = ai === 1 ? 2 : 1;
+  return evalBoard(board, ai) * 1.0 - evalBoard(board, opp) * 1.15;
 }
 
-/** 가능한 수 (착수할 빈 칸) — 주변에 돌이 있는 칸만 */
 function getMoves(board: Board): [number, number][] {
-  const moves: [number, number][] = [];
-  const hasStone = (r: number, c: number) =>
-    inBounds(r, c) && board[r][c] !== 0;
-  for (let r = 0; r < SIZE; r++) {
-    for (let c = 0; c < SIZE; c++) {
-      if (board[r][c] !== 0) continue;
-      // 주변 2칸 이내에 돌이 있는 경우만
-      let near = false;
-      for (let dr = -2; dr <= 2 && !near; dr++)
-        for (let dc = -2; dc <= 2 && !near; dc++)
-          if (hasStone(r + dr, c + dc)) near = true;
-      if (near) moves.push([r, c]);
-    }
-  }
-  if (moves.length === 0) moves.push([7, 7]); // 중앙
-  return moves;
+  const mvs: [number, number][] = [];
+  const near = (r: number, c: number) => {
+    for (let dr = -2; dr <= 2; dr++)
+      for (let dc = -2; dc <= 2; dc++)
+        if (ib(r + dr, c + dc) && board[r + dr][c + dc] !== 0) return true;
+    return false;
+  };
+  for (let r = 0; r < SIZE; r++)
+    for (let c = 0; c < SIZE; c++)
+      if (board[r][c] === 0 && near(r, c)) mvs.push([r, c]);
+  if (mvs.length === 0) mvs.push([7, 7]);
+  return mvs;
 }
 
-/** 정렬: 유망한 수 먼저 (욕심) */
-function orderMoves(board: Board, moves: [number, number][]): [number, number][] {
-  return moves.sort((a, b) => {
-    board[a[0]][a[1]] = 1;
-    const sa = evaluate(board);
+function orderMoves(board: Board, mvs: [number, number][], ai: Player): [number, number][] {
+  return mvs.sort((a, b) => {
+    board[a[0]][a[1]] = ai;
+    const sa = evaluate(board, ai);
     board[a[0]][a[1]] = 0;
-    board[b[0]][b[1]] = 1;
-    const sb = evaluate(board);
+    board[b[0]][b[1]] = ai;
+    const sb = evaluate(board, ai);
     board[b[0]][b[1]] = 0;
     return sb - sa;
   });
 }
 
-let nodesSearched = 0;
-
-/** Minimax with Alpha-Beta */
-function minimax(
-  board: Board, depth: number, alpha: number, beta: number, isMax: boolean
+function mm(
+  board: Board, depth: number, alpha: number, beta: number,
+  isMax: boolean, ai: Player, opp: Player
 ): number {
-  nodesSearched++;
-  if (depth === 0) return evaluate(board);
-
-  const moves = orderMoves(board, getMoves(board));
-  if (moves.length === 0) return evaluate(board);
-
+  if (depth === 0) return evaluate(board, ai);
+  const mvs = orderMoves(board, getMoves(board), isMax ? ai : opp);
+  if (mvs.length === 0) return evaluate(board, ai);
+  const p = isMax ? ai : opp;
+  const limit = depth >= 3 ? 10 : 14;
   if (isMax) {
-    let maxEval = -Infinity;
-    for (const [r, c] of moves.slice(0, 12)) { // 폭 제한
-      board[r][c] = 1;
-      const ev = minimax(board, depth - 1, alpha, beta, false);
+    let best = -Infinity;
+    for (const [r, c] of mvs.slice(0, limit)) {
+      board[r][c] = p;
+      const v = mm(board, depth - 1, alpha, beta, false, ai, opp);
       board[r][c] = 0;
-      maxEval = Math.max(maxEval, ev);
-      alpha = Math.max(alpha, ev);
+      best = Math.max(best, v);
+      alpha = Math.max(alpha, v);
       if (beta <= alpha) break;
     }
-    return maxEval;
+    return best;
   } else {
-    let minEval = Infinity;
-    for (const [r, c] of moves.slice(0, 12)) {
-      board[r][c] = 2;
-      const ev = minimax(board, depth - 1, alpha, beta, true);
+    let best = Infinity;
+    for (const [r, c] of mvs.slice(0, limit)) {
+      board[r][c] = p;
+      const v = mm(board, depth - 1, alpha, beta, true, ai, opp);
       board[r][c] = 0;
-      minEval = Math.min(minEval, ev);
-      beta = Math.min(beta, ev);
+      best = Math.min(best, v);
+      beta = Math.min(beta, v);
       if (beta <= alpha) break;
     }
-    return minEval;
+    return best;
   }
 }
 
-/** AI 최적 수 찾기 */
-export function findBestMove(board: Board, difficulty: number = 3): [number, number] | null {
-  nodesSearched = 0;
-  const moves = orderMoves(board, getMoves(board));
-  if (moves.length === 0) return null;
+/** AI 최적 수 찾기 — aiPlayer: AI의 플레이어 번호 */
+export function findBestMove(board: Board, aiPlayer: Player, depth: number = 3): [number, number] | null {
+  const opp: Player = aiPlayer === 1 ? 2 : 1;
+  const mvs = orderMoves(board, getMoves(board), aiPlayer);
+  if (mvs.length === 0) return null;
 
-  let bestMove = moves[0];
+  let bestMove = mvs[0];
   let bestScore = -Infinity;
 
-  for (const [r, c] of moves.slice(0, 15)) {
-    board[r][c] = 1;
-    const score = minimax(board, difficulty, -Infinity, Infinity, false);
+  const limit = Math.min(mvs.length, 12);
+  for (let i = 0; i < limit; i++) {
+    const [r, c] = mvs[i];
+    board[r][c] = aiPlayer;
+    const score = mm(board, depth, -Infinity, Infinity, false, aiPlayer, opp);
     board[r][c] = 0;
     if (score > bestScore) {
       bestScore = score;
@@ -165,28 +145,24 @@ export function findBestMove(board: Board, difficulty: number = 3): [number, num
   return bestMove;
 }
 
-/** 승리 체크 */
-export function checkWin(board: Board, player: Player): [number, number][] | null {
-  for (let r = 0; r < SIZE; r++) {
+/** 승리 체크 — 당첨 라인 좌표 반환 */
+export function checkWin(board: Board, p: Player): [number, number][] | null {
+  for (let r = 0; r < SIZE; r++)
     for (let c = 0; c < SIZE; c++) {
-      if (board[r][c] !== player) continue;
+      if (board[r][c] !== p) continue;
       for (const [dr, dc] of DIRS) {
         const cells: [number, number][] = [];
         let nr = r, nc = c;
-        let count = 0;
-        while (inBounds(nr, nc) && board[nr][nc] === player) {
+        while (ib(nr, nc) && board[nr][nc] === p) {
           cells.push([nr, nc]);
-          count++;
           nr += dr; nc += dc;
         }
-        if (count >= 5) return cells.slice(0, 5);
+        if (cells.length >= 5) return cells.slice(0, 5);
       }
     }
-  }
   return null;
 }
 
-/** 무승부 체크 */
 export function isDraw(board: Board): boolean {
   return board.every(row => row.every(c => c !== 0));
 }

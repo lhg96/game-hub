@@ -16,6 +16,8 @@ const ICONS: Record<string, string> = {
   galaga: '👾',
   'lucky-slot': '🎰',
   omok: '⚫',
+  janggi: '🔴',
+  baduk: '⚪',
 };
 
 const app = document.querySelector<HTMLDivElement>('#app')!;
