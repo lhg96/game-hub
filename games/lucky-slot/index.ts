@@ -26,6 +26,136 @@ const WIN_LINES: { idx: number; cells: number[]; label: string; diag: boolean }[
   { idx: 4, cells: [2, 4, 6], label: 'DIAG ↙', diag: true },
 ];
 
+// ====== Audio Engine (BGM + 효과음) ======
+let sharedCtx: AudioContext | null = null;
+function getCtx(): AudioContext | null {
+  if (typeof window === 'undefined') return null;
+  if (!sharedCtx) {
+    const Ctor = (window.AudioContext ||
+      (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext) as typeof AudioContext;
+    if (!Ctor) return null;
+    sharedCtx = new Ctor();
+  }
+  if (sharedCtx.state === 'suspended') void sharedCtx.resume();
+  return sharedCtx;
+}
+
+// BGM: 카지노 라운지 코드 진행 (초당 한 코드씩 부드럽게)
+function startBGM(): (() => void) {
+  const ctx = getCtx();
+  if (!ctx) return () => {};
+  const master = ctx.createGain();
+  master.gain.value = 0.05;
+  master.connect(ctx.destination);
+
+  const progression = [
+    [261.6, 329.6, 392.0],   // C major
+    [261.6, 329.6, 392.0],   // C major
+    [293.7, 349.2, 440.0],   // D minor
+    [349.2, 440.0, 523.3],   // F major
+    [392.0, 493.9, 587.3],   // G major
+    [392.0, 493.9, 587.3],   // G major
+    [349.2, 440.0, 523.3],   // F major
+    [261.6, 329.6, 392.0],   // C major
+  ];
+
+  let bar = 0;
+  let active = true;
+  let timer: number;
+
+  function playChord(notes: number[], startTime: number, dur: number) {
+    notes.forEach((freq) => {
+      const osc = ctx!.createOscillator();
+      const g = ctx!.createGain();
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(freq, startTime);
+      // 부드러운 어택/릴리즈
+      g.gain.setValueAtTime(0, startTime);
+      g.gain.linearRampToValueAtTime(0.04, startTime + 0.15);
+      g.gain.setValueAtTime(0.04, startTime + dur - 0.2);
+      g.gain.exponentialRampToValueAtTime(0.0001, startTime + dur);
+      osc.connect(g).connect(master);
+      osc.start(startTime);
+      osc.stop(startTime + dur + 0.05);
+    });
+    // 베이스 라인 (한 옥타브 아래)
+    const osc = ctx!.createOscillator();
+    const g = ctx!.createGain();
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(notes[0] / 2, startTime);
+    g.gain.setValueAtTime(0, startTime);
+    g.gain.linearRampToValueAtTime(0.06, startTime + 0.1);
+    g.gain.setValueAtTime(0.06, startTime + dur - 0.1);
+    g.gain.exponentialRampToValueAtTime(0.0001, startTime + dur);
+    osc.connect(g).connect(master);
+    osc.start(startTime);
+    osc.stop(startTime + dur + 0.05);
+  }
+
+  function scheduleLoop() {
+    if (!active) return;
+    const now = ctx.currentTime;
+    const CHORD_DUR = 1.9; // 약 2초 간격
+    for (let i = 0; i < progression.length; i++) {
+      const chordIdx = (bar + i) % progression.length;
+      playChord(progression[chordIdx], now + i * CHORD_DUR, CHORD_DUR);
+    }
+    bar = (bar + progression.length) % progression.length;
+    timer = window.setTimeout(scheduleLoop, progression.length * CHORD_DUR * 1000 - 200);
+  }
+
+  scheduleLoop();
+
+  return () => {
+    active = false;
+    clearTimeout(timer);
+    master.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.5);
+  };
+}
+
+// 슬롯 회전 효과음: 빠른 기계식 클릭
+function playSpinSound(duration: number) {
+  const ctx = getCtx();
+  if (!ctx) return;
+  const now = ctx.currentTime;
+  const clickCount = Math.floor(duration / 0.045);
+  for (let i = 0; i < clickCount; i++) {
+    const t = now + (i / clickCount) * duration;
+    // 첫 클릭은 약하고 점점 빨라졌다 느려지는 느낌
+    const phase = i / clickCount;
+    const volume = 0.03 + 0.04 * (1 - Math.abs(phase * 2 - 1));
+    const freq = 150 + phase * 400;
+
+    const osc = ctx.createOscillator();
+    const g = ctx.createGain();
+    osc.type = 'square';
+    osc.frequency.value = freq;
+    g.gain.setValueAtTime(volume, t);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + 0.03);
+    osc.connect(g).connect(ctx.destination);
+    osc.start(t);
+    osc.stop(t + 0.04);
+  }
+}
+
+// 릴 정지 효과음 (톡)
+function playStopSound() {
+  const ctx = getCtx();
+  if (!ctx) return;
+  const now = ctx.currentTime;
+  const osc = ctx.createOscillator();
+  const g = ctx.createGain();
+  osc.type = 'triangle';
+  osc.frequency.setValueAtTime(800, now);
+  osc.frequency.exponentialRampToValueAtTime(200, now + 0.08);
+  g.gain.setValueAtTime(0.12, now);
+  g.gain.exponentialRampToValueAtTime(0.0001, now + 0.1);
+  osc.connect(g).connect(ctx.destination);
+  osc.start(now);
+  osc.stop(now + 0.12);
+}
+
+// ====== Game Module ======
 let game: GameModule = {
   id: 'lucky-slot',
   title: 'LUCKY SLOT',
@@ -36,8 +166,16 @@ let game: GameModule = {
     let currentBet = 10;
     let isSpinning = false;
 
+    // 루트 배경
+    root.style.cssText += `
+      background: radial-gradient(ellipse at 50% 30%, rgba(255,215,0,0.06) 0%, transparent 60%),
+                  radial-gradient(ellipse at 50% 80%, rgba(255,0,127,0.05) 0%, transparent 50%),
+                  linear-gradient(180deg, #0a0b14 0%, #0d0e15 50%, #0a0b14 100%);
+      position: relative;
+    `;
+
     const container = document.createElement('div');
-    container.style.cssText = 'width:100%;max-width:480px;margin:0 auto;text-align:center;position:relative;';
+    container.style.cssText = 'width:100%;max-width:480px;margin:0 auto;text-align:center;position:relative;z-index:1;';
 
     // ====== CSS ======
     const css = document.createElement('style');
@@ -95,7 +233,7 @@ let game: GameModule = {
       }
       .bounce { animation:cellBounce 0.3s ease-out; }
 
-      /* ====== 레버: 붉은 공 스프링 ====== */
+      /* ====== 레버 ====== */
       @keyframes leverPull {
         0% { transform: translateY(0); }
         20% { transform: translateY(42px); }
@@ -106,9 +244,7 @@ let game: GameModule = {
         92% { transform: translateY(2px); }
         100% { transform: translateY(0); }
       }
-      .lever-pull .lever-ball {
-        animation: leverPull 0.55s cubic-bezier(0.34, 1.56, 0.64, 1) !important;
-      }
+      .lever-ball.lever-pull { animation: leverPull 0.55s cubic-bezier(0.34, 1.56, 0.64, 1) !important; }
       .lever-container {
         position:relative;width:50px;cursor:pointer;
         display:flex;flex-direction:column;align-items:center;
@@ -120,14 +256,12 @@ let game: GameModule = {
         width:32px;height:32px;border-radius:50%;
         background:radial-gradient(circle at 35% 28%, #ff6677, #cc0033 60%, #880022);
         box-shadow:0 3px 12px rgba(255,0,50,0.6), inset 0 -3px 6px rgba(0,0,0,0.3);
-        position:relative;z-index:2;
-        border:1px solid rgba(255,100,100,0.3);
+        position:relative;z-index:2;border:1px solid rgba(255,100,100,0.3);
       }
       .lever-ball::after {
         content:'';position:absolute;top:6px;left:8px;
         width:10px;height:6px;border-radius:50%;
-        background:rgba(255,255,255,0.3);
-        transform:rotate(-20deg);
+        background:rgba(255,255,255,0.3);transform:rotate(-20deg);
       }
       .lever-rod {
         width:4px;height:55px;
@@ -138,15 +272,9 @@ let game: GameModule = {
         width:36px;height:10px;
         background:linear-gradient(180deg, #555, #333);
         border-radius:3px 3px 5px 5px;margin-top:-2px;
-        box-shadow:0 2px 4px rgba(0,0,0,0.5);
-        border:1px solid #444;
+        box-shadow:0 2px 4px rgba(0,0,0,0.5);border:1px solid #444;
       }
-
-      /* machine + lever wrapper */
-      .slot-wrapper {
-        display:flex;align-items:stretch;gap:6px;
-        margin-bottom:18px;
-      }
+      .slot-wrapper { display:flex; align-items:stretch; gap:6px; margin-bottom:18px; }
     `;
 
     // ====== 타이틀 ======
@@ -183,12 +311,10 @@ let game: GameModule = {
     const machine = document.createElement('div');
     machine.style.cssText = 'flex:1;background:#050608;border-radius:12px;padding:10px;border:2px solid rgba(255,215,0,0.2);box-shadow:inset 0 0 16px rgba(0,0,0,0.8),0 0 12px rgba(255,215,0,0.1);position:relative;overflow:hidden;';
 
-    // 파티클 레이어
     const pl = document.createElement('div');
     pl.style.cssText = 'position:absolute;inset:0;pointer-events:none;z-index:10;';
     machine.appendChild(pl);
 
-    // 릴 그리드
     const reelGrid = document.createElement('div');
     reelGrid.style.cssText = 'display:flex;gap:5px;';
 
@@ -201,7 +327,6 @@ let game: GameModule = {
       reel.style.cssText = 'flex:1;display:flex;flex-direction:column;gap:5px;';
       reelGrid.appendChild(reel);
       reelDivs.push(reel);
-
       for (let row = 0; row < 3; row++) {
         const cell = document.createElement('div');
         cell.className = 'slot-cell';
@@ -214,10 +339,9 @@ let game: GameModule = {
         cellEls.push(cell);
       }
     }
-
     machine.appendChild(reelGrid);
 
-    // ====== 레버: 붉은 공 ======
+    // ====== 레버 ======
     const leverContainer = document.createElement('div');
     leverContainer.className = 'lever-container';
     leverContainer.innerHTML = `
@@ -226,7 +350,6 @@ let game: GameModule = {
       <div class="lever-base"></div>
     `;
     leverContainer.title = '레버를 당겨서 스핀!';
-
     slotWrapper.append(machine, leverContainer);
 
     // ====== 컨트롤 ======
@@ -257,7 +380,6 @@ let game: GameModule = {
       betRow.appendChild(btn);
     });
 
-    // SPIN 버튼 (레버 보조)
     const spinBtn = document.createElement('button');
     spinBtn.textContent = '🎰 SPIN 🎰';
     spinBtn.style.cssText = 'background:linear-gradient(135deg,#ff007f,#d6006b);border:none;color:white;padding:14px;border-radius:10px;font-size:1.1rem;font-weight:800;letter-spacing:1px;cursor:pointer;transition:all 0.2s;';
@@ -275,6 +397,9 @@ let game: GameModule = {
     const lwEl = container.querySelector('.slw')!;
     const lnEl = container.querySelector('.sll')!;
     const bmEl = container.querySelector('.sbm')!;
+
+    // ====== BGM 시작 ======
+    const stopBGM = startBGM();
 
     // ====== 유틸 ======
     function rndSym(): SymbolDef {
@@ -348,7 +473,6 @@ let game: GameModule = {
       isSpinning = false;
       setSpinUI(false);
 
-      // 5개 라인별 3매치 검사
       const matchedLines: number[] = [];
       let totalWin = 0;
       for (const line of WIN_LINES) {
@@ -359,7 +483,6 @@ let game: GameModule = {
         if (icons[0] === icons[1] && icons[1] === icons[2]) {
           const sym = symbols.find(s => s.icon === icons[0]);
           if (sym) {
-            // 일반라인 3x, 대각선 4x 배율
             const lineMult = line.diag ? 4 : 3;
             totalWin += Math.floor(currentBet * sym.multiplier * lineMult);
             matchedLines.push(line.idx);
@@ -367,7 +490,6 @@ let game: GameModule = {
         }
       }
 
-      // 2매치 consolation (전체에서 하나만)
       if (matchedLines.length === 0) {
         for (const line of WIN_LINES) {
           const icons = line.cells.map(ci => {
@@ -376,7 +498,7 @@ let game: GameModule = {
           });
           if (icons[0] === icons[1] || icons[1] === icons[2] || icons[0] === icons[2]) {
             totalWin += Math.floor(currentBet * 0.5);
-            break; // 한 번만
+            break;
           }
         }
       }
@@ -402,7 +524,6 @@ let game: GameModule = {
         lnEl.textContent = '0';
         sound.sad();
       }
-
       updUI();
     }
 
@@ -416,34 +537,34 @@ let game: GameModule = {
       balance -= currentBet;
       isSpinning = true;
       setSpinUI(true);
-      msg.textContent = '레버를 당겼다! 🎰';
+      msg.textContent = '🎰 슬롯 돌아간다!';
       highlightLines([]);
       lwEl.textContent = '0';
       lnEl.textContent = '0';
       updUI();
 
-      // 레버 애니메이션
       animateLever();
+
+      // 슬롯 회전 효과음 (약 1.5초)
+      playSpinSound(1.5);
 
       pl.innerHTML = '';
       cellEls.forEach(c => { c.querySelector('.slot-symbol')!.textContent = '🎰'; });
-
-      // 릴 스핀
       reelDivs.forEach(r => r.classList.add('spinning'));
 
-      // 결과 생성
       const cols: SymbolDef[][] = [
         [rndSym(), rndSym(), rndSym()],
         [rndSym(), rndSym(), rndSym()],
         [rndSym(), rndSym(), rndSym()],
       ];
 
-      // 릴 차례 정지 (600ms → 1000ms → 1400ms)
       const COL_STOPS = [600, 1000, 1400];
       for (let col = 0; col < 3; col++) {
         const delay = COL_STOPS[col];
         setTimeout(() => {
           reelDivs[col].classList.remove('spinning');
+          // 정지 효과음
+          playStopSound();
           for (let row = 0; row < 3; row++) {
             const idx = row * 3 + col;
             cellEls[idx].querySelector('.slot-symbol')!.textContent = cols[col][row].icon;
@@ -463,6 +584,11 @@ let game: GameModule = {
     leverContainer.addEventListener('click', spin);
 
     updUI();
+
+    // ====== unmount ======
+    game.unmount = () => {
+      stopBGM();
+    };
   },
 };
 
