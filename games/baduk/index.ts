@@ -6,9 +6,9 @@
 import Weiqi from 'weiqi';
 import type { GameModule } from '../../src/types';
 
-const SIZE = 9;
-const CELL = 38;
-const PAD = 24;
+const SIZE = 19;
+const CELL = 26;
+const PAD = 18;
 const CW = CELL * (SIZE - 1) + PAD * 2;
 
 type GameState = ReturnType<typeof Weiqi.createGame>;
@@ -83,9 +83,9 @@ function aiFindMove(game: GameState): [number, number] | null {
 
       // 4. 중앙 선호 (초반)
       const totalStones = board.flat().filter(x => x !== '.').length;
-      if (totalStones < 10) {
-        const dist = Math.abs(r - 4) + Math.abs(c - 4);
-        score += Math.max(0, 8 - dist) * 3;
+      if (totalStones < 40) {
+        const dist = Math.abs(r - 9) + Math.abs(c - 9);
+        score += Math.max(0, 16 - dist) * 3;
       }
 
       if (score > 0 || captures > 0) moves.push([r, c, score]);
@@ -95,7 +95,7 @@ function aiFindMove(game: GameState): [number, number] | null {
   if (moves.length === 0) {
     for (let r = 0; r < SIZE; r++)
       for (let c = 0; c < SIZE; c++)
-        if (board[r][c] === '.') moves.push([r, c, Math.max(0, 8 - (Math.abs(r - 4) + Math.abs(c - 4))) * 3]);
+        if (board[r][c] === '.') moves.push([r, c, Math.max(0, 16 - (Math.abs(r - 9) + Math.abs(c - 9))) * 3]);
   }
 
   moves.sort((a, b) => b[2] - a[2]);
@@ -109,7 +109,7 @@ function aiFindMove(game: GameState): [number, number] | null {
 let game: GameModule = {
   id: 'baduk',
   title: '바둑',
-  description: 'AI와 9×9 바둑 (weiqi.js 엔진)',
+  description: 'AI와 19×19 바둑 (weiqi.js 엔진)',
 
   mount(root) {
     let gameState: GameState = Weiqi.createGame(SIZE);
@@ -191,8 +191,8 @@ let game: GameModule = {
         ctx.beginPath(); ctx.moveTo(p, PAD); ctx.lineTo(p, PAD + (SIZE - 1) * CELL); ctx.stroke();
       }
 
-      // 별표
-      const stars = [[2, 2], [2, 6], [4, 4], [6, 2], [6, 6]];
+      // 별표 (19×19 = 9곳)
+      const stars = [[3, 3], [3, 9], [3, 15], [9, 3], [9, 9], [9, 15], [15, 3], [15, 9], [15, 15]];
       ctx.fillStyle = '#333';
       for (const [r, c] of stars) { ctx.beginPath(); ctx.arc(PAD + c * CELL, PAD + r * CELL, 2.5, 0, Math.PI * 2); ctx.fill(); }
 
@@ -206,7 +206,7 @@ let game: GameModule = {
           if (b[r][c] === 'x') { g.addColorStop(0, '#555'); g.addColorStop(0.6, '#222'); g.addColorStop(1, '#000'); }
           else { g.addColorStop(0, '#fff'); g.addColorStop(0.5, '#eee'); g.addColorStop(1, '#ccc'); }
           ctx.fillStyle = g;
-          ctx.beginPath(); ctx.arc(x, y, 13, 0, Math.PI * 2); ctx.fill();
+          ctx.beginPath(); ctx.arc(x, y, 10, 0, Math.PI * 2); ctx.fill();
           ctx.strokeStyle = b[r][c] === 'x' ? '#000' : '#aaa'; ctx.lineWidth = 0.5; ctx.stroke();
         }
     }
