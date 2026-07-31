@@ -48,13 +48,6 @@ let game: GameModule = {
       }
       .reel.spinning .slot-symbol { animation: slotBlur 0.08s infinite linear !important; }
 
-      @keyframes slotPulse {
-        0% { transform: scale(1); box-shadow: 0 0 0 rgba(255,215,0,0); }
-        50% { transform: scale(1.02); box-shadow: 0 0 30px rgba(255,215,0,0.3); }
-        100% { transform: scale(1); box-shadow: 0 0 0 rgba(255,215,0,0); }
-      }
-      .slot-win { animation: slotPulse 0.6s ease-in-out 3; }
-
       @keyframes winGlow {
         0%, 100% { box-shadow: inset 0 0 8px rgba(255,50,50,0.4), 0 0 12px rgba(255,50,50,0.3); border-color: #ff3333; }
         50% { box-shadow: inset 0 0 16px rgba(255,50,50,0.7), 0 0 24px rgba(255,50,50,0.6); border-color: #ff6666; }
@@ -102,66 +95,51 @@ let game: GameModule = {
       }
       .bounce { animation:cellBounce 0.3s ease-out; }
 
-      /* ====== 레버 ====== */
-      @keyframes leverDown {
-        0% { transform: rotate(0deg) translateX(-10px); }
-        15% { transform: rotate(22deg) translateX(-10px); }
-        50% { transform: rotate(22deg) translateX(-10px); }
-        70% { transform: rotate(-3deg) translateX(-10px); }
-        85% { transform: rotate(1deg) translateX(-10px); }
-        100% { transform: rotate(0deg) translateX(-10px); }
+      /* ====== 레버: 붉은 공 스프링 ====== */
+      @keyframes leverPull {
+        0% { transform: translateY(0); }
+        20% { transform: translateY(42px); }
+        45% { transform: translateY(42px); }
+        60% { transform: translateY(-10px); }
+        72% { transform: translateY(5px); }
+        82% { transform: translateY(-4px); }
+        92% { transform: translateY(2px); }
+        100% { transform: translateY(0); }
       }
-      .lever-pull {
-        animation: leverDown 0.5s cubic-bezier(0.34, 1.56, 0.64, 1) !important;
+      .lever-pull .lever-ball {
+        animation: leverPull 0.55s cubic-bezier(0.34, 1.56, 0.64, 1) !important;
       }
       .lever-container {
-        position:relative;width:44px;cursor:pointer;
+        position:relative;width:50px;cursor:pointer;
         display:flex;flex-direction:column;align-items:center;
-        justify-content:center;transition:opacity 0.2s;
-        flex-shrink:0;
+        justify-content:flex-start;padding-top:8px;
+        transition:opacity 0.2s;flex-shrink:0;
       }
       .lever-container.disabled { opacity:0.4; cursor:not-allowed; }
-      .lever-inner {
-        display:flex;flex-direction:column;align-items:center;
-        transform:rotate(0deg) translateX(-10px);
-        transition:transform 0.1s;
+      .lever-ball {
+        width:32px;height:32px;border-radius:50%;
+        background:radial-gradient(circle at 35% 28%, #ff6677, #cc0033 60%, #880022);
+        box-shadow:0 3px 12px rgba(255,0,50,0.6), inset 0 -3px 6px rgba(0,0,0,0.3);
+        position:relative;z-index:2;
+        border:1px solid rgba(255,100,100,0.3);
       }
-      .lever-knob {
-        width:26px;height:26px;border-radius:50%;
-        background:radial-gradient(circle at 35% 30%, #ff5577, #bb0033);
-        box-shadow:0 2px 8px rgba(255,0,50,0.5), inset 0 -2px 4px rgba(0,0,0,0.3);
-        border:2px solid #ff88aa;z-index:2;position:relative;
+      .lever-ball::after {
+        content:'';position:absolute;top:6px;left:8px;
+        width:10px;height:6px;border-radius:50%;
+        background:rgba(255,255,255,0.3);
+        transform:rotate(-20deg);
       }
-      .lever-knob::after {
-        content:'';position:absolute;top:4px;left:6px;
-        width:8px;height:5px;border-radius:50%;
-        background:rgba(255,255,255,0.35);
-      }
-      .lever-shaft {
-        width:8px;height:70px;
-        background:linear-gradient(90deg, #666, #999 40%, #777 60%, #555);
-        border-radius:4px;margin:-2px 0;box-shadow:2px 0 4px rgba(0,0,0,0.3);
+      .lever-rod {
+        width:4px;height:55px;
+        background:linear-gradient(180deg, #555, #333);
+        border-radius:2px;margin-top:-4px;z-index:1;
       }
       .lever-base {
-        width:40px;height:14px;
+        width:36px;height:10px;
         background:linear-gradient(180deg, #555, #333);
-        border-radius:4px 4px 6px 6px;margin-top:-3px;
-        box-shadow:0 2px 6px rgba(0,0,0,0.5);
+        border-radius:3px 3px 5px 5px;margin-top:-2px;
+        box-shadow:0 2px 4px rgba(0,0,0,0.5);
         border:1px solid #444;
-      }
-      .lever-base::before {
-        content:'';display:block;width:100%;height:3px;
-        background:linear-gradient(90deg, transparent, rgba(255,215,0,0.2), transparent);
-        border-radius:2px;
-      }
-      .lever-spring {
-        width:12px;height:20px;position:relative;
-        margin:-2px 0;
-      }
-      .lever-spring::before {
-        content:'〰️';position:absolute;font-size:14px;
-        left:50%;transform:translateX(-50%);color:#888;
-        opacity:0.5;
       }
 
       /* machine + lever wrapper */
@@ -239,18 +217,14 @@ let game: GameModule = {
 
     machine.appendChild(reelGrid);
 
-    // ====== 레버 ======
+    // ====== 레버: 붉은 공 ======
     const leverContainer = document.createElement('div');
     leverContainer.className = 'lever-container';
-    const leverInner = document.createElement('div');
-    leverInner.className = 'lever-inner';
-    leverInner.innerHTML = `
-      <div class="lever-knob"></div>
-      <div class="lever-shaft"></div>
-      <div class="lever-spring"></div>
+    leverContainer.innerHTML = `
+      <div class="lever-ball"></div>
+      <div class="lever-rod"></div>
       <div class="lever-base"></div>
     `;
-    leverContainer.appendChild(leverInner);
     leverContainer.title = '레버를 당겨서 스핀!';
 
     slotWrapper.append(machine, leverContainer);
@@ -353,9 +327,10 @@ let game: GameModule = {
     }
 
     function animateLever() {
-      leverInner.classList.remove('lever-pull');
-      void leverInner.offsetWidth;
-      leverInner.classList.add('lever-pull');
+      const ball = leverContainer.querySelector('.lever-ball')!;
+      ball.classList.remove('lever-pull');
+      void (ball as HTMLElement).offsetWidth;
+      ball.classList.add('lever-pull');
     }
 
     function setSpinUI(disabled: boolean) {
@@ -415,7 +390,6 @@ let game: GameModule = {
         } else {
           msg.textContent = `👍 2매치! +${totalWin.toLocaleString()}`;
         }
-        container.classList.add('slot-win');
         highlightLines(matchedLines);
         spawnParticles(matchedLines.length > 0 ? 25 + matchedLines.length * 10 : 10);
         sound.cheer();
@@ -429,7 +403,6 @@ let game: GameModule = {
         sound.sad();
       }
 
-      setTimeout(() => container.classList.remove('slot-win'), 2200);
       updUI();
     }
 
@@ -444,7 +417,6 @@ let game: GameModule = {
       isSpinning = true;
       setSpinUI(true);
       msg.textContent = '레버를 당겼다! 🎰';
-      container.classList.remove('slot-win');
       highlightLines([]);
       lwEl.textContent = '0';
       lnEl.textContent = '0';
