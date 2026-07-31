@@ -1,1 +1,4 @@
-node_modules/\ndist/\n.vite/\n*.log
+node_modules/
+dist/
+.vite/
+*.log
