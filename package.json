@@ -13,6 +13,7 @@
     "vite": "^5.2.0"
   },
   "dependencies": {
-    "@algorithm.ts/gomoku": "^4.0.5"
+    "@algorithm.ts/gomoku": "^4.0.5",
+    "weiqi": "^1.0.0"
   }
 }
