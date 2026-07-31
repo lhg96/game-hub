@@ -19,9 +19,9 @@ const symbols: SymbolDef[] = [
 ];
 
 const WIN_LINES: { idx: number; cells: number[]; label: string; diag: boolean }[] = [
-  { idx: 0, cells: [0, 1, 2], label: 'TOP', diag: false },
-  { idx: 1, cells: [3, 4, 5], label: 'CENTER', diag: false },
-  { idx: 2, cells: [6, 7, 8], label: 'BOTTOM', diag: false },
+  { idx: 0, cells: [0, 3, 6], label: 'TOP', diag: false },
+  { idx: 1, cells: [1, 4, 7], label: 'CENTER', diag: false },
+  { idx: 2, cells: [2, 5, 8], label: 'BOTTOM', diag: false },
   { idx: 3, cells: [0, 4, 8], label: 'DIAG ↘', diag: true },
   { idx: 4, cells: [2, 4, 6], label: 'DIAG ↙', diag: true },
 ];
@@ -477,7 +477,7 @@ let game: GameModule = {
       let totalWin = 0;
       for (const line of WIN_LINES) {
         const icons = line.cells.map(ci => {
-          const r = Math.floor(ci / 3), c = ci % 3;
+          const c = Math.floor(ci / 3), r = ci % 3;
           return results[c][r].icon;
         });
         if (icons[0] === icons[1] && icons[1] === icons[2]) {
@@ -493,7 +493,7 @@ let game: GameModule = {
       if (matchedLines.length === 0) {
         for (const line of WIN_LINES) {
           const icons = line.cells.map(ci => {
-            const r = Math.floor(ci / 3), c = ci % 3;
+            const c = Math.floor(ci / 3), r = ci % 3;
             return results[c][r].icon;
           });
           if (icons[0] === icons[1] || icons[1] === icons[2] || icons[0] === icons[2]) {
@@ -566,7 +566,7 @@ let game: GameModule = {
           // 정지 효과음
           playStopSound();
           for (let row = 0; row < 3; row++) {
-            const idx = row * 3 + col;
+            const idx = col * 3 + row;
             cellEls[idx].querySelector('.slot-symbol')!.textContent = cols[col][row].icon;
             cellEls[idx].classList.add('bounce');
             setTimeout(() => cellEls[idx].classList.remove('bounce'), 300);

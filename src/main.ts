@@ -15,6 +15,7 @@ const ICONS: Record<string, string> = {
   tetris: '🧱',
   galaga: '👾',
   'lucky-slot': '🎰',
+  omok: '⚫',
 };
 
 const app = document.querySelector<HTMLDivElement>('#app')!;
